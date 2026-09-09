@@ -8,7 +8,7 @@ Built for [Confluent AI Day Indonesia 2026](https://events.confluent.io/confluen
 
 ## What It Does
 
-LogStream AI is a real-time AI-powered log and transaction diagnosis platform built entirely on Confluent Cloud. It continuously ingests application logs from a VM-based Python producer, database change events such as PostgreSQL via Debezium CDC or any apps that have logs. It processes them through Flink SQL with tumbling window aggregations and ML_DETECT_ANOMALIES for spike detection, then invokes Claude Haiku via AI_COMPLETE to generate actionable root-cause diagnoses for every critical event — all in-stream, with no batch delay.
+LogStream AI is a real-time AI-powered log and transaction diagnosis platform built entirely on Confluent Cloud. It continuously ingests any application logs from a VM-based Python producer, database change events such as PostgreSQL via Debezium CDC or any apps that have logs. It processes them through Flink SQL with tumbling window aggregations and ML_DETECT_ANOMALIES for spike detection, then invokes Claude Haiku via AI_COMPLETE to generate actionable root-cause diagnoses for every critical event — all in-stream, with no batch delay.
 
 Who it's for: Platform engineering teams, SREs, and DevOps engineers at any enterprise running production software.
 
