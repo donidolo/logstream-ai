@@ -8,26 +8,32 @@ Built for [Confluent AI Day Indonesia 2026](https://events.confluent.io/confluen
 
 ## What It Does
 
-LogStream AI continuously ingests application logs and database change events, processes them through Apache Flink SQL with ML-based anomaly detection, then invokes Claude AI to generate actionable root-cause diagnoses for every critical event — all in real-time, with no batch delay.
+LogStream AI is a real-time AI-powered log and transaction diagnosis platform built entirely on Confluent Cloud. It continuously ingests application logs from a VM-based Python producer, database change events such as PostgreSQL via Debezium CDC or any apps that have logs. It processes them through Flink SQL with tumbling window aggregations and ML_DETECT_ANOMALIES for spike detection, then invokes Claude Haiku via AI_COMPLETE to generate actionable root-cause diagnoses for every critical event — all in-stream, with no batch delay.
+
+Who it's for: Platform engineering teams, SREs, and DevOps engineers at any enterprise running production software.
+
+The benefit: Reduces Mean Time to Resolution (MTTR) from hours to seconds. Instead of manually grepping logs and correlating events across services during an incident, LogStream AI delivers an AI-generated root-cause analysis and recommended action for every anomaly — autonomously, 24/7. Every stream is governed with registered schemas and data contracts, ensuring enterprise-grade data quality throughout the pipeline.
+
+The architecture extends naturally toward autonomous Streaming Agents that can auto-remediate incidents (create tickets, restart services, page on-call) — making this a foundation for self-healing infrastructure.
 
 ## Architecture
 
 ```
 ┌─────────────────┐     ┌──────────────────────┐
-│ VM Log Producer  │     │ PostgreSQL CDC        │
-│ (Python)         │     │ (Debezium Connector)  │
+│ VM Log Producer │     │ PostgreSQL CDC       │
+│ (Python)        │     │ (Debezium Connector) │
 └────────┬────────┘     └──────────┬───────────┘
          │                         │
          ▼                         ▼
-┌──────────────────────────────────────────────┐
-│            Confluent Cloud (Kafka)            │
+┌──────────────────────────────────────────────────┐
+│            Confluent Cloud (Kafka)               │
 │  raw-logs          logstream.public.transactions │
-│  (JSON Schema)     (Debezium CDC)             │
-└──────────────────────┬───────────────────────┘
+│  (JSON Schema)     (Debezium CDC)                │
+└──────────────────────┬───────────────────────────┘
                        │
                        ▼
 ┌──────────────────────────────────────────────┐
-│              Flink SQL Processing             │
+│              Flink SQL Processing            │
 │  • Tumbling window aggregation (1-min)       │
 │  • ML_DETECT_ANOMALIES (error rate spikes)   │
 │  • AI_COMPLETE (Claude Haiku diagnosis)      │
@@ -35,14 +41,14 @@ LogStream AI continuously ingests application logs and database change events, p
                        │
                        ▼
 ┌──────────────────────────────────────────────┐
-│         ai_alerts_stream (Kafka topic)        │
+│         ai_alerts_stream (Kafka topic)       │
 │  Schema-registered + Data Contract           │
 │  Tableflow → Iceberg materialization         │
 └──────────────────────┬───────────────────────┘
                        │
                        ▼
 ┌──────────────────────────────────────────────┐
-│          Streamlit Dashboard                  │
+│          Streamlit Dashboard                 │
 │  Live alert feed + AI diagnosis cards        │
 │  Metrics + Alerts by Service chart           │
 └──────────────────────────────────────────────┘
