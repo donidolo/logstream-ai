@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
 LogStream AI - Real-Time Dashboard (persistent state version)
-Alerts are cached to /tmp/logstream_alerts.json so they survive Streamlit reruns.
+Alerts are cached to a temp file so they survive Streamlit reruns.
 
 Run:
-  ulimit -n 4096
   python3 -m streamlit run dashboard.py
 """
 
 import json
 import os
+import tempfile
 import time
-from collections import deque, Counter
+from collections import Counter
 
 import streamlit as st
 from confluent_kafka import Consumer
@@ -20,7 +20,7 @@ from confluent_kafka.schema_registry.avro import AvroDeserializer
 from confluent_kafka.serialization import SerializationContext, MessageField
 
 ALERTS_TOPIC = "ai_alerts_stream"
-CACHE_FILE = "/tmp/logstream_alerts.json"
+CACHE_FILE = os.path.join(tempfile.gettempdir(), "logstream_alerts.json")
 MAX_ALERTS = 100
 
 CONFIG_PATH = os.environ.get(
@@ -32,7 +32,7 @@ CONFIG_PATH = os.environ.get(
 def load_env(path):
     cfg = {}
     if os.path.exists(path):
-        with open(path) as f:
+        with open(path, encoding="utf-8-sig") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
@@ -73,7 +73,7 @@ if "consumer" not in st.session_state:
         "sasl.mechanisms": "PLAIN",
         "sasl.username": cfg["KAFKA_API_KEY"],
         "sasl.password": cfg["KAFKA_API_SECRET"],
-        "group.id": "logstream-dashboard-v3",
+        "group.id": "logstream-dashboard-v4",
         "auto.offset.reset": "earliest",
     })
     st.session_state.consumer.subscribe([ALERTS_TOPIC])
@@ -86,16 +86,21 @@ if "deserializer" not in st.session_state:
     st.session_state.deserializer = AvroDeserializer(sr_client)
 
 
-def poll_and_persist(max_msgs=100):
+def poll_and_persist(max_msgs=200):
     """Poll new messages, prepend them to the cached list on disk."""
     consumer = st.session_state.consumer
     deserializer = st.session_state.deserializer
 
     new_ones = []
+    empty_polls = 0
     for _ in range(max_msgs):
-        msg = consumer.poll(0.2)
+        msg = consumer.poll(0.5)
         if msg is None:
-            break
+            empty_polls += 1
+            if empty_polls >= 3:
+                break
+            continue
+        empty_polls = 0
         if msg.error():
             continue
         try:
