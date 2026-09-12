@@ -8,13 +8,13 @@ Built for [Confluent AI Day Indonesia 2026](https://events.confluent.io/confluen
 
 ## What It Does
 
-LogStream AI is a real-time AI-powered log and transaction diagnosis platform built entirely on Confluent Cloud. It continuously ingests any application logs from a VM-based Python producer, database change events such as PostgreSQL via Debezium CDC or any apps that have logs. It processes them through Flink SQL with tumbling window aggregations and ML_DETECT_ANOMALIES for spike detection, then invokes Claude Haiku via AI_COMPLETE to generate actionable root-cause diagnoses for every critical event — all in-stream, with no batch delay.
+LogStream AI is a real-time AI-powered log and transaction diagnosis platform built entirely on Confluent Cloud. It continuously ingests any application logs from a VM-based Python producer, database change events such as PostgreSQL via Debezium CDC or any apps that have logs. It processes them through Flink SQL with tumbling window aggregations and ML_DETECT_ANOMALIES for spike detection, then invokes Claude Haiku via AI_COMPLETE to generate actionable root-cause diagnoses for every critical event all in-stream, with no batch delay.
 
 Who it's for: Platform engineering teams, SREs, and DevOps engineers at any enterprise running production software.
 
 The benefit: Reduces Mean Time to Resolution (MTTR) from hours to seconds. Instead of manually grepping logs and correlating events across services during an incident, LogStream AI delivers an AI-generated root-cause analysis and recommended action for every anomaly — autonomously, 24/7. Every stream is governed with registered schemas and data contracts, ensuring enterprise-grade data quality throughout the pipeline.
 
-The architecture extends naturally toward autonomous Streaming Agents that can auto-remediate incidents (create tickets, restart services, page on-call) — making this a foundation for self-healing infrastructure.
+The architecture extends naturally toward autonomous Streaming Agents that can auto-remediate incidents (create tickets, restart services, page on-call) making this a foundation for self-healing infrastructure.
 
 ## Architecture
 
