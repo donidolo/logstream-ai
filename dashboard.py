@@ -28,6 +28,21 @@ CONFIG_PATH = os.environ.get(
     os.path.join(os.path.dirname(__file__), "..", "config", "confluent.env"),
 )
 
+# --- display-only lookups (new: used for badges/icons, no effect on data/logic) ---
+LEVEL_ORDER = ["CRITICAL", "ERROR", "WARNING", "INFO"]
+LEVEL_BADGE_COLOR = {
+    "CRITICAL": "red",
+    "ERROR": "orange",
+    "WARNING": "yellow",
+    "INFO": "blue",
+}
+LEVEL_ICON = {
+    "CRITICAL": ":material/error:",
+    "ERROR": ":material/warning:",
+    "WARNING": ":material/info:",
+    "INFO": ":material/check_circle:",
+}
+
 
 def load_env(path):
     cfg = {}
@@ -59,9 +74,7 @@ def save_cached_alerts(alerts_list):
         pass
 
 
-st.set_page_config(page_title="LogStream AI", page_icon="!", layout="wide")
-st.title("LogStream AI - Real-Time Log Diagnosis")
-st.caption("AI-powered anomaly diagnosis on streaming logs - Confluent Cloud + Claude")
+st.set_page_config(page_title="LogStream AI", page_icon=":material/monitoring:", layout="wide")
 
 cfg = load_env(CONFIG_PATH)
 
@@ -122,14 +135,27 @@ def poll_and_persist(max_msgs=200):
     return len(new_ones)
 
 
-# --- controls ---
-col_a, col_b, col_c = st.columns([1, 1, 3])
-with col_a:
-    do_refresh = st.button("Refresh now")
-with col_b:
-    do_clear = st.button("Clear feed")
-with col_c:
-    auto = st.checkbox("Auto-refresh every 5s", value=False)
+# ============================== Sidebar: controls ==============================
+with st.sidebar:
+    st.markdown("## LogStream AI")
+    st.caption("AI-powered anomaly diagnosis on streaming logs")
+    st.caption("Confluent Cloud + Claude")
+
+    with st.container(horizontal=True):
+        do_refresh = st.button("Refresh", icon=":material/refresh:", width="stretch")
+        do_clear = st.button("Clear", icon=":material/delete_sweep:", width="stretch")
+
+    auto = st.toggle("Auto-refresh every 5s", value=False)
+
+    st.caption("Filters apply to the live feed below")
+    service_filter_slot = st.container()
+    level_filter_slot = st.container()
+    search = st.text_input(
+        "Search",
+        placeholder="Search message or diagnosis",
+        icon=":material/search:",
+        label_visibility="collapsed",
+    )
 
 if do_clear:
     save_cached_alerts([])
@@ -140,53 +166,158 @@ if do_refresh or auto:
 
 alerts = load_cached_alerts()
 
+# --- header ---
+st.title("Real-time log diagnosis", icon=":material/monitoring:")
+st.caption("Last checked at " + time.strftime("%H:%M:%S"))
+
 # --- errors ---
 if st.session_state.get("errors"):
-    st.error("Deserialization error: " + st.session_state["errors"][0])
+    st.error("Deserialization error: " + st.session_state["errors"][0], icon=":material/error:")
+
+# --- sidebar filter widgets (populated now that alerts are loaded) ---
+services = sorted({a.get("service_name", "unknown") for a in alerts})
+levels_present = [lvl for lvl in LEVEL_ORDER if any(a.get("log_level") == lvl for a in alerts)]
+
+with service_filter_slot:
+    selected_services = st.multiselect("Service", services, placeholder="All services")
+with level_filter_slot:
+    selected_levels = st.pills("Level", levels_present, selection_mode="multi")
+
+
+def matches_filters(a):
+    if selected_services and a.get("service_name", "unknown") not in selected_services:
+        return False
+    if selected_levels and a.get("log_level") not in selected_levels:
+        return False
+    if search:
+        needle = search.lower()
+        haystack = str(a.get("message", "")) + " " + str(a.get("diagnosis", ""))
+        if needle not in haystack.lower():
+            return False
+    return True
+
+
+filtered_alerts = [a for a in alerts if matches_filters(a)]
 
 # --- metrics ---
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total Alerts", len(alerts))
 svc_counts = Counter(a.get("service_name", "unknown") for a in alerts)
-c2.metric("Top Affected Service", svc_counts.most_common(1)[0][0] if svc_counts else "-")
-c3.metric("Critical Alerts", sum(1 for a in alerts if a.get("log_level") == "CRITICAL"))
-c4.metric("New This Refresh", new_count)
+response_times = [
+    a.get("response_time_ms") for a in alerts if isinstance(a.get("response_time_ms"), (int, float))
+]
+avg_response = sum(response_times) / len(response_times) if response_times else None
+# oldest -> newest for the last 20 samples (alerts are newest-first)
+response_sparkline = list(reversed(response_times[:20]))
 
-st.write("---")
+metric_cols = st.columns(5)
+with metric_cols[0]:
+    st.metric("Total alerts", len(alerts), border=True, icon=":material/notifications:", height="stretch")
+with metric_cols[1]:
+    st.metric(
+        "Top affected service",
+        svc_counts.most_common(1)[0][0] if svc_counts else "-",
+        border=True,
+        icon=":material/dns:",
+        height="stretch",
+    )
+with metric_cols[2]:
+    st.metric(
+        "Critical alerts",
+        sum(1 for a in alerts if a.get("log_level") == "CRITICAL"),
+        border=True,
+        icon=":material/error:",
+        height="stretch",
+    )
+with metric_cols[3]:
+    st.metric("New this refresh", new_count, border=True, icon=":material/bolt:", height="stretch")
+with metric_cols[4]:
+    st.metric(
+        "Avg response time",
+        f"{avg_response:.0f} ms" if avg_response is not None else "-",
+        border=True,
+        icon=":material/speed:",
+        chart_data=response_sparkline if response_sparkline else None,
+        chart_type="line",
+        height="stretch",
+    )
 
-# --- chart (pandas-compatible) ---
-if svc_counts:
-    st.subheader("Alerts by Service")
-    try:
-        import pandas as pd
-        df = pd.DataFrame(list(svc_counts.items()), columns=["service", "alerts"]).set_index("service")
-        st.bar_chart(df)
-    except Exception:
-        for svc, ct in svc_counts.most_common():
-            st.write("- {}: {}".format(svc, ct))
+# ============================== Tabs: feed / analytics ==============================
+tab_feed, tab_analytics = st.tabs([":material/rss_feed: Live feed", ":material/query_stats: Analytics"])
 
-st.write("---")
-st.subheader("Live Alert Feed")
+with tab_analytics:
+    if svc_counts:
+        col1, col2 = st.columns(2)
+        with col1:
+            with st.container(border=True):
+                st.subheader("Alerts by service", icon=":material/bar_chart:")
+                try:
+                    import pandas as pd
+                    df = pd.DataFrame(list(svc_counts.items()), columns=["service", "alerts"])
+                    st.bar_chart(df, x="service", y="alerts")
+                except Exception:
+                    for svc, ct in svc_counts.most_common():
+                        st.write("- {}: {}".format(svc, ct))
+        with col2:
+            with st.container(border=True):
+                st.subheader("Alerts by level", icon=":material/warning:")
+                level_counts = Counter(a.get("log_level", "UNKNOWN") for a in alerts)
+                try:
+                    import pandas as pd
+                    df2 = pd.DataFrame(
+                        [(lvl, level_counts[lvl]) for lvl in LEVEL_ORDER if lvl in level_counts]
+                        + [(lvl, ct) for lvl, ct in level_counts.items() if lvl not in LEVEL_ORDER],
+                        columns=["level", "alerts"],
+                    )
+                    st.bar_chart(df2, x="level", y="alerts")
+                except Exception:
+                    for lvl, ct in level_counts.most_common():
+                        st.write("- {}: {}".format(lvl, ct))
+    else:
+        st.caption("No data yet for analytics.")
 
-if not alerts:
-    st.info("No alerts yet. Click 'Refresh now'. Ensure producer + Flink INSERT job are running.")
-else:
-    for a in alerts[:25]:
-        service = a.get("service_name", "unknown")
-        level = a.get("log_level", "?")
-        message = a.get("message", "")
-        rt = a.get("response_time_ms", "")
-        diagnosis = a.get("diagnosis", "No diagnosis available")
-        header = "[{}] {} - {} ({}ms)".format(level, service, message, rt)
-        try:
-            with st.expander(header):
-                st.markdown("**Service:** `{}` | **Level:** `{}` | **Response:** `{}ms`".format(service, level, rt))
-                st.markdown("**AI Diagnosis:**")
-                st.markdown(diagnosis)
-        except Exception:
-            st.markdown("### " + header)
-            st.markdown("**AI Diagnosis:** " + str(diagnosis))
-            st.write("---")
+    with st.container(border=True):
+        st.subheader("Raw cached alerts", icon=":material/table_chart:")
+        if alerts:
+            st.dataframe(alerts, width="stretch", hide_index=True)
+            st.download_button(
+                "Download as JSON",
+                data=json.dumps(alerts, indent=2, default=str),
+                file_name="logstream_alerts.json",
+                mime="application/json",
+                icon=":material/download:",
+            )
+        else:
+            st.caption("No alerts cached yet.")
+
+with tab_feed:
+    st.caption("Showing {} of {} cached alerts".format(len(filtered_alerts), len(alerts)))
+
+    if not alerts:
+        st.info(
+            "No alerts yet. Click 'Refresh' in the sidebar. Ensure producer + Flink INSERT job are running.",
+            icon=":material/info:",
+        )
+    elif not filtered_alerts:
+        st.info("No alerts match the current filters.", icon=":material/filter_alt_off:")
+    else:
+        for a in filtered_alerts[:25]:
+            service = a.get("service_name", "unknown")
+            level = a.get("log_level", "?")
+            message = a.get("message", "")
+            rt = a.get("response_time_ms", "")
+            diagnosis = a.get("diagnosis", "No diagnosis available")
+            header = "{} - {} ({}ms)".format(service, message, rt)
+            try:
+                with st.expander(header, icon=LEVEL_ICON.get(level, ":material/notifications:")):
+                    with st.container(horizontal=True):
+                        st.badge(level, color=LEVEL_BADGE_COLOR.get(level, "gray"))
+                        st.badge(service, icon=":material/dns:", color="gray")
+                        st.badge("{}ms".format(rt), icon=":material/speed:", color="gray")
+                    st.markdown("**AI diagnosis**")
+                    st.markdown(diagnosis)
+            except Exception:
+                st.markdown("### [{}] ".format(level) + header)
+                st.markdown("**AI Diagnosis:** " + str(diagnosis))
+                st.write("---")
 
 if auto:
     time.sleep(5)
